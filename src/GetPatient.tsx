@@ -1,23 +1,21 @@
 import { useEffect, useState } from "react";
 import Loader from "./Loader";
 import EpicFhirApi from "./services/EpicFhirApi";
-import { Alert } from "react-bootstrap";
 import { useNavigate } from "react-router-dom";
 import { TokenData } from "./CommonTypes";
 import { Patient } from "fhir/r4";
 
-const GetPatient = ({epicFhirApi}: {epicFhirApi: EpicFhirApi}) => {
+const GetPatient = ({epicFhirApi, setError}: {epicFhirApi: EpicFhirApi, setError: Function}) => {
 
     const navigate = useNavigate();
 
     const [ tokenData, setTokenData ] = useState<TokenData | null>();
-    const [ error, setError] = useState('');
     const [ isLoading, setIsLoading ] = useState(false);
     const [ patient, setPatient ] = useState<Patient>();
 
     useEffect(() => {
         let tokenDataString = localStorage.getItem('tokenData');
-        if (!tokenDataString) navigate("/");
+        if (!tokenDataString) navigate('/');
         tokenDataString = JSON.parse(tokenDataString as string);
         setTokenData(JSON.parse(tokenDataString as string)); // double JSON parse needed as tokenData wrapped in ""
     }, []);
@@ -27,14 +25,18 @@ const GetPatient = ({epicFhirApi}: {epicFhirApi: EpicFhirApi}) => {
         setIsLoading(true);
         epicFhirApi.getResourceById('Patient', tokenData.patient, tokenData.access_token)
             .then((res) => {
-                if (res.status === 401) throw Error('Error logging in to EPIC: ' + res.statusText);
+                if (res.status === 401) throw Error(`Error logging in to EPIC: ${res.statusText} ${res.status}`);
                 return res.json();
             })
             .then((res) => {
                 setPatient(res);
             }).catch(err => {
                 console.log(err);
-                setError('Error logging in to EPIC.')
+                if (err.toString().includes('401')) {
+                    setError('Token expired, please log in to EPIC.');
+                } else {
+                    setError('Error fetching data from EPIC.');
+                }
                 window.localStorage.removeItem('tokenData');
                 setTokenData(null);
             }).finally(() => setIsLoading(false));
@@ -42,12 +44,13 @@ const GetPatient = ({epicFhirApi}: {epicFhirApi: EpicFhirApi}) => {
 
 return (
     <div>
-        <div className='heading'>
-            <h4 className="my-5">Patient Profile</h4>
-        </div>
         { patient && 
-        <div>
-            <table className="table">
+        <div className='bg-light py-2 border-bottom border-dark'>
+            <span className='mx-5'>{patient.name?.at(0)?.family || '[UNKNOWN]'}, {patient.name?.at(0)?.given?.join(' ') || '[UNKNOWN]'}</span>
+            <span className='mx-5'>{patient.gender? patient.gender.charAt(0).toUpperCase() + patient.gender.slice(1) : ''}</span>
+            <span className='mx-5'>{patient.birthDate ? new Date(patient.birthDate).toLocaleDateString() : ''}</span>
+            <span className='mx-5'>{patient.telecom?.filter((x: any) => x.system === 'phone')?.at(0)?.value}</span>
+            {/* <table className='table'>
                 <thead>
                     <tr>
                     <th>User ID</th>
@@ -62,21 +65,16 @@ return (
                     <tr key={patient.id}>
                         <td>{patient.id}</td>
                         <td>{patient.name?.at(0)?.given?.join(' ')}</td>
-                        <td>{patient.name?.at(0)?.family}</td>
+                        <td></td>
                         <td>{patient.gender? patient.gender.charAt(0).toUpperCase() + patient.gender.slice(1) : undefined}</td>
-                        <td>{patient.birthDate}</td>
+                        <td>{patient.birthDate ? new Date(patient.birthDate).toLocaleDateString() : ''}</td>
                         <td>{patient.telecom?.filter((x: any) => x.system === 'phone')?.at(0)?.value}</td>
                     </tr>
                 </tbody>
-            </table>
+            </table> */}
         </div>
         }
         {isLoading && <Loader />}
-        {error && 
-            <Alert variant="danger" className="p-2 my-5">
-              <Alert.Heading>Error</Alert.Heading>
-              <p>{error}</p>
-            </Alert>}
     </div>
 )
 };

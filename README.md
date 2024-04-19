@@ -2,6 +2,16 @@
 
 This project was bootstrapped with [Create React App](https://github.com/facebook/create-react-app).
 
+This app connects to the EPIC FHIR sandbox. A test account is required to use it, which can be registered at: https://fhir.epic.com/ (your account might not be activated immediately, it can take up to 24 hours).
+
+The following environment variables can be provided (note that the client ID is the only one that is required at the time of writing):
+
+* EPIC_AUTH_ENDPOINT = defaults to https://fhir.epic.com/interconnect-fhir-oauth/oauth2/authorize (current auth endpoint, but subject to change)
+* EPIC_TOKEN_ENDPOINT = defaults to https://fhir.epic.com/interconnect-fhir-oauth/oauth2/token (current token endpoint, but subject to change)
+* EPIC_BASE_URL = defaults to https://fhir.epic.com/interconnect-fhir-oauth/api/FHIR/R4 (current base URL, but subject to change)
+* REDIRECT_URI = defaults to http://localhost:3000 (URL this app runs on)
+* CLIENT_ID (supplied on EPIC FHIR sign-up)
+
 ## Available Scripts
 
 In the project directory, you can run:

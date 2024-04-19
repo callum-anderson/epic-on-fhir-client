@@ -1,140 +1,85 @@
 import { useEffect, useState } from "react";
-import { Link } from "react-router-dom";
+import { useNavigate } from "react-router-dom";
 import Loader from "./Loader";
-import { Patient, BundleEntry } from 'fhir/r4';
-import FhirApi from "./services/EpicFhirApi";
-import { Alert, Button, Col, Form, FormGroup, Row } from "react-bootstrap";
+import { BundleEntry, MedicationRequest } from 'fhir/r4';
+import { TokenData } from "./CommonTypes";
+import EpicFhirApi from "./services/EpicFhirApi";
 
-const GetMedications = ({fhirApi}: {fhirApi: FhirApi}) => {
+const GetMedications = ({epicFhirApi, setError}: {epicFhirApi: EpicFhirApi, setError: Function}) => {
 
-  const params: { [key: string]: any } = {};
+  const navigate = useNavigate();
 
-  const [isLoading, setIsLoading] = useState(false);
-  const [error, setError] = useState('');
-  const [previous, setPrevious] = useState('');
-  const [next, setNext] = useState('');
-  const [searchParams, setSearchParams] = useState(params);
-  const [Patients, setPatients] = useState([]);
+    const [ tokenData, setTokenData ] = useState<TokenData | null>();
+    // const [ error, setError] = useState('');
+    const [ isLoading, setIsLoading ] = useState(false);
+    const [ medications, setMedications ] = useState<MedicationRequest[]>();
 
-  useEffect(() => {
-    getPatients('Patient?_count=10');
-  }, []);
+    useEffect(() => {
+        let tokenDataString = localStorage.getItem('tokenData');
+        if (!tokenDataString) navigate("/");
+        tokenDataString = JSON.parse(tokenDataString as string);
+        setTokenData(JSON.parse(tokenDataString as string)); // double JSON parse needed as tokenData wrapped in ""
+    }, []);
 
-  const getPatients = (searchUrl: string) => {
+    if (tokenData && !medications && !isLoading) {
 
-    setIsLoading(true);
+        setIsLoading(true);
+        const queryParams = new URLSearchParams({
+          subject: tokenData.patient
+        });
+        epicFhirApi.searchResourceWithQueryParams('MedicationRequest', queryParams, tokenData.access_token)
+            .then((res) => {
+                if (res.status === 401) throw Error('Error logging in to EPIC: ' + res.statusText);
+                return res.json();
+            })
+            .then((res) => {
+                setMedications(res.entry?.filter(
+                  (x: any) => x.resource.resourceType === 'MedicationRequest'
+                  ).map((bundleEntry: BundleEntry) => bundleEntry.resource));
+            }).catch(err => {
+                console.log(err);
+                setError('Error logging in to EPIC.')
+                window.localStorage.removeItem('tokenData');
+                setTokenData(null);
+            }).finally(() => setIsLoading(false));
+    }
 
-    fhirApi.getResources(searchUrl)
-    .then((res) => {
-            return res.json();
-        })
-        .then(res => {
-            const next = res.link?.filter((x: any) => x.relation === 'next').at(0)?.url;
-            const previous = res.link?.filter((x: any) => x.relation === 'previous').at(0)?.url;
-            setPrevious(previous);
-            setNext(next);
-            setPatients(res.entry?.map((bundleEntry: BundleEntry) => bundleEntry.resource));
-        })
-        .catch((err) => {
-            console.log(err);
-            setError(err instanceof Error ? err.message : 'Unable to GET /Patient');
-        })
-        .finally(() => setIsLoading(false));
-
-  };
-
-  const handleInput = (event: any) => {
-    event.preventDefault();
-
-    const { name, value } = event.target;
-
-    setSearchParams({ ...searchParams, [name]: value });
-
-  }
-
-  const handleSubmit = async (event: any) => {
-    event.preventDefault();
-
-    const keyValueStr = Object.keys(searchParams).filter(x => searchParams[x]).map(key => `${key}=${encodeURIComponent(searchParams[key])}`).join("&");
-
-    getPatients(`Patient${keyValueStr ? `?${keyValueStr}` : ''}`);
-  }
-
-  if (!Patients) {
-    return <h5 className="my-5">No patients found.</h5>;
-  } else {
-    return (
-      <div className="mt-5">
-          <Form className="mt-5" onSubmit={handleSubmit}>
-            <Form.Group as={Row} className="mb-3" controlId="patientName">
-                <Form.Label column sm={4} className="my-3">First Name</Form.Label>
-                <Col sm={6} className="my-3">
-                    <Form.Control className="col-md-6" type="text" name="given" placeholder="Search first name" onChange={handleInput} />
-                </Col>
-                <Form.Label column sm={4} className="my-3">Last Name</Form.Label>
-                <Col sm={6} className="my-3">
-                    <Form.Control type="text" name="family" placeholder="Search last name" onChange={handleInput} />
-                </Col>
-            </Form.Group>
-            <Form.Group as={Row} className="mb-3" controlId="patientPhoneNumber">
-                <Form.Label column sm={4} className="my-3">Phone Number</Form.Label>
-                <Col sm={6} className="my-3">
-                    <Form.Control className="col-md-6" type="text" name="telecom" placeholder="Search phone number" onChange={handleInput} />
-                </Col>
-                <Col sm={2} className="my-3">
-                  <Button className="btn btn-primary btn-large centerButton" type="submit">Filter</Button>
-                </Col>
-            </Form.Group>
-          </Form>
-        <table className="table table-striped">
-          <thead>
-            <tr>
-              <th>ID</th>
-              <th>First Name(s)</th>
-              <th>Family Name</th>
-              <th>Gender</th>
-              <th>Date of Birth</th>
-              <th>Phone Number</th>
-            </tr>
-          </thead>
-          <tbody>
-            {Patients.map((patient: Patient, i) => {
-              return (
-                <tr key={patient.id}>
-                  <td>{patient.id}</td>
-                  <td>{patient.name?.at(0)?.given?.join(' ')}</td>
-                  <td>{patient.name?.at(0)?.family}</td>
-                  <td>{patient.gender? patient.gender.charAt(0).toUpperCase() + patient.gender.slice(1) : undefined}</td>
-                  <td>{patient.birthDate}</td>
-                  <td>{patient.telecom?.filter((x: any) => x.system === 'phone')?.at(0)?.value}</td>
-                  <td>
-                    <Link to={`/Patient/${patient?.id}`}>
-                        <Button className="btn btn-primary btn-large centerButton">Edit</Button>
-                    </Link>
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-        {error && 
-            <Alert variant="danger" className="p-2 my-5">
-              <Alert.Heading>Error</Alert.Heading>
-              <p>{error}</p>
-            </Alert>}
-        {(Patients && Patients.length > 0) &&
-        <Row className="justify-content-md-center">
-            <Col xs lg="2">
-                <Button className="btn btn-primary centerButton w-100" disabled={!previous} onClick={() => getPatients(previous)}>Previous</Button>
-            </Col>
-            <Col xs lg="2">
-                <Button className="btn btn-primary centerButton w-100" disabled={!next} onClick={() => getPatients(next)}>Next</Button>
-            </Col>
-        </Row>}
+return (
+    <div>
+        { medications && 
+        <div>
+            <div className='heading'>
+              <h4 className="my-5">Medications</h4>
+            </div>
+            <table className="table">
+                <thead>
+                    <tr>
+                    <th>ID</th>
+                    <th>Description</th>
+                    <th>Dosage</th>
+                    <th>Reason</th>
+                    <th>Date</th>
+                    </tr>
+                </thead>
+                <tbody>
+                  {medications.map((medication: MedicationRequest, i) => {
+                    return (
+                      <tr key={medication.id}>
+                        <td>{medication.identifier?.at(0)?.value}</td>
+                        <td>{medication.medicationReference?.display}</td>
+                        <td>{medication.dosageInstruction?.at(0)?.patientInstruction}</td>
+                        <td>{medication.reasonCode?.at(0)?.text}</td>
+                        <td>{medication.authoredOn ? new Date(medication.authoredOn).toLocaleDateString() : ''}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+            </table>
+        </div>
+        }
         {isLoading && <Loader />}
-      </div>
-    );
-  }
+    </div>
+)
 };
 
 export default GetMedications;
